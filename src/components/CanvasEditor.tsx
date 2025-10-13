@@ -17,9 +17,9 @@ function drawRect(ctx: CanvasRenderingContext2D, s: Shape & { type: 'rect' }) {
 	ctx.save()
 	ctx.translate(s.x, s.y)
 	ctx.rotate((s.rotation * Math.PI) / 180)
-	ctx.fillStyle = s.fill || '#61dafb'
+	if (s.fill) ctx.fillStyle = s.fill
 	ctx.strokeStyle = s.stroke || '#000'
-	ctx.fillRect(-s.width / 2, -s.height / 2, s.width, s.height)
+	if (s.fill) ctx.fillRect(-s.width / 2, -s.height / 2, s.width, s.height)
 	ctx.strokeRect(-s.width / 2, -s.height / 2, s.width, s.height)
 	ctx.restore()
 }
@@ -28,11 +28,9 @@ function drawCircle(ctx: CanvasRenderingContext2D, s: Shape & { type: 'circle' }
 	ctx.save()
 	ctx.translate(s.x, s.y)
 	ctx.rotate((s.rotation * Math.PI) / 180)
-	ctx.fillStyle = s.fill || '#f58'
 	ctx.strokeStyle = s.stroke || '#000'
 	ctx.beginPath()
 	ctx.arc(0, 0, s.radius, 0, Math.PI * 2)
-	ctx.fill()
 	ctx.stroke()
 	ctx.restore()
 }
@@ -122,8 +120,8 @@ export default function CanvasEditor({ shapes, onSelect, tool = 'select', onComm
 			setStartPoint({ x, y })
 			setPreview(
 				tool === 'rect'
-					? { type: 'rect', x, y, width: 0, height: 0, rotation: 0, fill: '#61dafb', stroke: '#000' }
-					: { type: 'circle', x, y, radius: 0, rotation: 0, fill: '#f58', stroke: '#000' },
+					? { type: 'rect', x, y, width: 0, height: 0, rotation: 0, stroke: '#000' }
+					: { type: 'circle', x, y, radius: 0, rotation: 0, stroke: '#000' },
 			)
 			return
 		}
@@ -145,7 +143,7 @@ export default function CanvasEditor({ shapes, onSelect, tool = 'select', onComm
 			const h = Math.abs(dy)
 			const cx = startPoint.x + dx / 2
 			const cy = startPoint.y + dy / 2
-			setPreview({ type: 'rect', x: cx, y: cy, width: w, height: h, rotation: 0, fill: '#61dafb', stroke: '#000' })
+			setPreview({ type: 'rect', x: cx, y: cy, width: w, height: h, rotation: 0, fill: '', stroke: '#000' })
 		} else if (tool === 'circle') {
 			const dx = x - startPoint.x
 			const dy = y - startPoint.y

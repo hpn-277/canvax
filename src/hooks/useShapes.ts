@@ -51,7 +51,7 @@ export default function useShapes(initial: Shape[] = []) {
       width: opts.width ?? 120,
       height: opts.height ?? 80,
       rotation: opts.rotation ?? 0,
-      fill: opts.fill ?? '#61dafb',
+  fill: opts.fill ?? undefined,
       stroke: opts.stroke ?? '#000000',
       zIndex: opts.zIndex ?? 0,
     }
@@ -67,7 +67,7 @@ export default function useShapes(initial: Shape[] = []) {
       y: opts.y ?? 200,
       radius: opts.radius ?? 50,
       rotation: opts.rotation ?? 0,
-      fill: opts.fill ?? '#f58',
+  fill: opts.fill ?? undefined,
       stroke: opts.stroke ?? '#000000',
       zIndex: opts.zIndex ?? 0,
     }
