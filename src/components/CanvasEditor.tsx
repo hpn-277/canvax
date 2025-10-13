@@ -68,6 +68,58 @@ export default function CanvasEditor({ shapes, onSelect, tool = 'select', onComm
 	const [startPoint, setStartPoint] = useState<{ x: number; y: number } | null>(null)
 	const [preview, setPreview] = useState<DraftShape | null>(null)
 
+	function angleToCursor(angleRad: number): CanvasCursor {
+		// Normalize to [0, 2π)
+		let a = angleRad % (Math.PI * 2)
+		if (a < 0) a += Math.PI * 2
+		const deg = (a * 180) / Math.PI
+		// Map to nearest axis/diagonal (every 45deg)
+		if ((deg >= 337.5 && deg < 360) || (deg >= 0 && deg < 22.5) || (deg >= 157.5 && deg < 202.5)) return 'ew-resize'
+		if ((deg >= 67.5 && deg < 112.5) || (deg >= 247.5 && deg < 292.5)) return 'ns-resize'
+		if ((deg >= 22.5 && deg < 67.5) || (deg >= 202.5 && deg < 247.5)) return 'nwse-resize'
+		return 'nesw-resize'
+	}
+
+	type CanvasCursor = 'default' | 'pointer' | 'crosshair' | 'move' | 'ns-resize' | 'ew-resize' | 'nwse-resize' | 'nesw-resize'
+
+	function getRectHandles(sel: Extract<Shape, { type: 'rect' }>) {
+		const w = sel.width
+		const h = sel.height
+		const halfW = w / 2
+		const halfH = h / 2
+		const localPts = [
+			{ x: -halfW, y: -halfH },
+			{ x: 0, y: -halfH },
+			{ x: halfW, y: -halfH },
+			{ x: halfW, y: 0 },
+			{ x: halfW, y: halfH },
+			{ x: 0, y: halfH },
+			{ x: -halfW, y: halfH },
+			{ x: -halfW, y: 0 },
+		]
+		const rot = (sel.rotation * Math.PI) / 180
+		const cos = Math.cos(rot)
+		const sin = Math.sin(rot)
+		return localPts.map((p) => {
+			const worldX = sel.x + p.x * cos - p.y * sin
+			const worldY = sel.y + p.x * sin + p.y * cos
+			const angle = Math.atan2(worldY - sel.y, worldX - sel.x)
+			return { x: worldX, y: worldY, cursor: angleToCursor(angle) as CanvasCursor }
+		})
+	}
+
+	function getCircleHandles(sel: Extract<Shape, { type: 'circle' }>) {
+		const rot = (sel.rotation * Math.PI) / 180
+		const points = [] as { x: number; y: number; cursor: CanvasCursor }[]
+		for (let i = 0; i < 8; i++) {
+			const a = rot + (i * Math.PI) / 4
+			const x = sel.x + Math.cos(a) * sel.radius
+			const y = sel.y + Math.sin(a) * sel.radius
+			points.push({ x, y, cursor: angleToCursor(a) })
+		}
+		return points
+	}
+
 	// single render effect: draws shapes, preview, and selection in the right order
 	useEffect(() => {
 		const canvas = canvasRef.current
@@ -191,24 +243,49 @@ export default function CanvasEditor({ shapes, onSelect, tool = 'select', onComm
 	}
 
 	function handlePointerMove(e: React.PointerEvent<HTMLCanvasElement>) {
-		if (!isDrawing || !startPoint) return
-		const rect = (e.target as HTMLCanvasElement).getBoundingClientRect()
+		const canvas = canvasRef.current
+		if (!canvas) return
+		const rect = canvas.getBoundingClientRect()
 		const x = e.clientX - rect.left
 		const y = e.clientY - rect.top
-		if (tool === 'rect') {
-			const dx = x - startPoint.x
-			const dy = y - startPoint.y
-			const w = Math.abs(dx)
-			const h = Math.abs(dy)
-			const cx = startPoint.x + dx / 2
-			const cy = startPoint.y + dy / 2
-			setPreview({ type: 'rect', x: cx, y: cy, width: w, height: h, rotation: 0, fill: '', stroke: '#000' })
-		} else if (tool === 'circle') {
-			const dx = x - startPoint.x
-			const dy = y - startPoint.y
-			const r = Math.sqrt(dx * dx + dy * dy)
-			setPreview({ type: 'circle', x: startPoint.x, y: startPoint.y, radius: r, rotation: 0, fill: '#f58', stroke: '#000' })
+
+		// When drawing, update preview
+		if (isDrawing && startPoint) {
+			if (tool === 'rect') {
+				const dx = x - startPoint.x
+				const dy = y - startPoint.y
+				const w = Math.abs(dx)
+				const h = Math.abs(dy)
+				const cx = startPoint.x + dx / 2
+				const cy = startPoint.y + dy / 2
+				setPreview({ type: 'rect', x: cx, y: cy, width: w, height: h, rotation: 0, fill: '', stroke: '#000' })
+			} else if (tool === 'circle') {
+				const dx = x - startPoint.x
+				const dy = y - startPoint.y
+				const r = Math.sqrt(dx * dx + dy * dy)
+				setPreview({ type: 'circle', x: startPoint.x, y: startPoint.y, radius: r, rotation: 0, fill: '#f58', stroke: '#000' })
+			}
+			return
 		}
+
+		// Not drawing: update cursor when hovering handles of selected shape
+		let cursor: CanvasCursor = 'default'
+		if (selected) {
+			const sel = shapes.find((s) => s.id === selected)
+			if (sel) {
+				const handles = sel.type === 'rect' ? getRectHandles(sel) : getCircleHandles(sel)
+				const hitRadius = 8
+				for (const h of handles) {
+					const dx = x - h.x
+					const dy = y - h.y
+					if (dx * dx + dy * dy <= hitRadius * hitRadius) {
+						cursor = h.cursor
+						break
+					}
+				}
+			}
+		}
+		canvas.style.cursor = cursor
 	}
 
 	function handlePointerUp() {
