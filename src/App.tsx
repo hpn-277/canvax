@@ -5,7 +5,7 @@ import Toolbar from './components/Toolbar'
 import useShapes from './hooks/useShapes'
 
 function App() {
-  const { shapes, addRect, addCircle, remove } = useShapes([])
+  const { shapes, addRect, addCircle, remove, reorder } = useShapes([])
   const [selectMode] = useState(true)
   const [tool, setTool] = useState<'select' | 'rect' | 'circle'>('select')
   const [selected, setSelected] = useState<string | null>(null)
@@ -17,10 +17,18 @@ function App() {
 
   // bring forward / send backward simple implementations will be added later
   function handleBringForward() {
-    // stub
+    if (!selected) return
+    const idx = shapes.findIndex((s) => s.id === selected)
+    if (idx === -1) return
+    const to = Math.min(shapes.length - 1, idx + 1)
+    if (to !== idx) reorder(idx, to)
   }
   function handleSendBackward() {
-    // stub
+    if (!selected) return
+    const idx = shapes.findIndex((s) => s.id === selected)
+    if (idx === -1) return
+    const to = Math.max(0, idx - 1)
+    if (to !== idx) reorder(idx, to)
   }
 
   return (

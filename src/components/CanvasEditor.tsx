@@ -52,7 +52,9 @@ export default function CanvasEditor({ shapes, onSelect, tool = 'select', onComm
 		ctx.clearRect(0, 0, canvas.width, canvas.height)
 
 		// draw in z-order (array order)
+		// console.log('shapes to draw:', shapes);
 		shapes.forEach((s) => {
+			console.log('drawing shape', s);
 			if (s.type === 'rect') drawRect(ctx, s)
 			else drawCircle(ctx, s)
 		})
