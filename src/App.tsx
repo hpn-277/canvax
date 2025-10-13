@@ -1,34 +1,56 @@
 import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
 import './App.css'
+import CanvasEditor from './components/CanvasEditor'
+import Toolbar from './components/Toolbar'
+import useShapes from './hooks/useShapes'
 
 function App() {
-  const [count, setCount] = useState(0)
+  const { shapes, addRect, addCircle, remove } = useShapes([])
+  const [selectMode] = useState(true)
+  const [tool, setTool] = useState<'select' | 'rect' | 'circle'>('select')
+  const [selected, setSelected] = useState<string | null>(null)
+
+  function handleDelete() {
+    if (selected) remove(selected)
+    setSelected(null)
+  }
+
+  // bring forward / send backward simple implementations will be added later
+  function handleBringForward() {
+    // stub
+  }
+  function handleSendBackward() {
+    // stub
+  }
 
   return (
-    <>
-      <div>
-        <a href="https://vite.dev" target="_blank">
-          <img src={viteLogo} className="logo" alt="Vite logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
+    <div style={{ padding: 16 }}>
+      <Toolbar tool={tool} onSetTool={setTool} onDelete={handleDelete} onBringForward={handleBringForward} onSendBackward={handleSendBackward} />
+      <div style={{ marginTop: 12 }}>
+        <CanvasEditor
+          shapes={shapes}
+          onSelect={(id) => {
+            if (!selectMode) return
+            setSelected(id)
+          }}
+          // drawing callbacks
+          onCommitShape={(shape) => {
+            // shape will be partial; use addRect/addCircle depending on type
+            if ((shape as any).type === 'rect') {
+              addRect({
+                x: (shape as any).x,
+                y: (shape as any).y,
+                width: (shape as any).width,
+                height: (shape as any).height,
+              } as any)
+            } else if ((shape as any).type === 'circle') {
+              addCircle({ x: (shape as any).x, y: (shape as any).y, radius: (shape as any).radius } as any)
+            }
+          }}
+          tool={tool}
+        />
       </div>
-      <h1>Vite + React</h1>
-      <div className="card">
-        <button onClick={() => setCount((count) => count + 1)}>
-          count is {count}
-        </button>
-        <p>
-          Edit <code>src/App.tsx</code> and save to test HMR
-        </p>
-      </div>
-      <p className="read-the-docs">
-        Click on the Vite and React logos to learn more
-      </p>
-    </>
+    </div>
   )
 }
 

@@ -1,0 +1,175 @@
+import React, { useEffect, useRef, useState } from 'react'
+import type { Shape } from '../types/shapes'
+
+type Props = {
+	shapes: Shape[]
+	// called when user clicks/selects existing shape
+	onSelect?: (id: string | null) => void
+	// drawing tool
+	tool?: 'select' | 'rect' | 'circle'
+	// called when a drawn shape should be committed (pointerup)
+	onCommitShape?: (shape: any) => void
+	width?: number
+	height?: number
+}
+
+function drawRect(ctx: CanvasRenderingContext2D, s: Shape & { type: 'rect' }) {
+	ctx.save()
+	ctx.translate(s.x, s.y)
+	ctx.rotate((s.rotation * Math.PI) / 180)
+	ctx.fillStyle = s.fill || '#61dafb'
+	ctx.strokeStyle = s.stroke || '#000'
+	ctx.fillRect(-s.width / 2, -s.height / 2, s.width, s.height)
+	ctx.strokeRect(-s.width / 2, -s.height / 2, s.width, s.height)
+	ctx.restore()
+}
+
+function drawCircle(ctx: CanvasRenderingContext2D, s: Shape & { type: 'circle' }) {
+	ctx.save()
+	ctx.translate(s.x, s.y)
+	ctx.rotate((s.rotation * Math.PI) / 180)
+	ctx.fillStyle = s.fill || '#f58'
+	ctx.strokeStyle = s.stroke || '#000'
+	ctx.beginPath()
+	ctx.arc(0, 0, s.radius, 0, Math.PI * 2)
+	ctx.fill()
+	ctx.stroke()
+	ctx.restore()
+}
+
+export default function CanvasEditor({ shapes, onSelect, tool = 'select', onCommitShape, width = 800, height = 600 }: Props) {
+	const canvasRef = useRef<HTMLCanvasElement | null>(null)
+	const [selected, setSelected] = useState<string | null>(null)
+	const [isDrawing, setIsDrawing] = useState(false)
+	const [startPoint, setStartPoint] = useState<{ x: number; y: number } | null>(null)
+	const [preview, setPreview] = useState<any | null>(null)
+
+	// single render effect: draws shapes, preview, and selection in the right order
+	useEffect(() => {
+		const canvas = canvasRef.current
+		if (!canvas) return
+		const ctx = canvas.getContext('2d')!
+		ctx.clearRect(0, 0, canvas.width, canvas.height)
+
+		// draw in z-order (array order)
+		shapes.forEach((s) => {
+			if (s.type === 'rect') drawRect(ctx, s)
+			else drawCircle(ctx, s)
+		})
+
+		// draw preview on top if present
+		if (preview) {
+			ctx.save()
+			ctx.globalAlpha = 0.8
+			if (preview.type === 'rect') drawRect(ctx, preview)
+			if (preview.type === 'circle') drawCircle(ctx, preview)
+			ctx.restore()
+		}
+
+		// draw selection if present
+		if (selected) {
+			const sel = shapes.find((x) => x.id === selected)
+			if (sel) {
+				ctx.save()
+				ctx.strokeStyle = 'rgba(0,0,0,0.6)'
+				ctx.lineWidth = 2
+				if (sel.type === 'rect') {
+					const w = sel.width
+					const h = sel.height
+					ctx.translate(sel.x, sel.y)
+					ctx.rotate((sel.rotation * Math.PI) / 180)
+					ctx.strokeRect(-w / 2 - 6, -h / 2 - 6, w + 12, h + 12)
+				} else {
+					ctx.beginPath()
+					ctx.arc(sel.x, sel.y, sel.radius + 6, 0, Math.PI * 2)
+					ctx.stroke()
+				}
+				ctx.restore()
+			}
+		}
+	}, [shapes, selected, preview])
+
+	// basic hit testing (bounding box for rect, circle distance for circle)
+	function hitTest(x: number, y: number) {
+		for (let i = shapes.length - 1; i >= 0; i--) {
+			const s = shapes[i]
+			if (s.type === 'rect') {
+				// for simplicity, use axis-aligned bounds (no rotation hit-test yet)
+				const left = s.x - s.width / 2
+				const right = s.x + s.width / 2
+				const top = s.y - s.height / 2
+				const bottom = s.y + s.height / 2
+				if (x >= left && x <= right && y >= top && y <= bottom) return s.id
+			} else {
+				const dx = x - s.x
+				const dy = y - s.y
+				if (dx * dx + dy * dy <= s.radius * s.radius) return s.id
+			}
+		}
+		return null
+	}
+
+	function handlePointerDown(e: React.PointerEvent<HTMLCanvasElement>) {
+		const rect = (e.target as HTMLCanvasElement).getBoundingClientRect()
+		const x = e.clientX - rect.left
+		const y = e.clientY - rect.top
+
+		if (tool === 'rect' || tool === 'circle') {
+			// begin drawing
+			setIsDrawing(true)
+			setStartPoint({ x, y })
+			setPreview(
+				tool === 'rect'
+					? { type: 'rect', x, y, width: 0, height: 0, rotation: 0, fill: '#61dafb', stroke: '#000' }
+					: { type: 'circle', x, y, radius: 0, rotation: 0, fill: '#f58', stroke: '#000' },
+			)
+			return
+		}
+
+		const hit = hitTest(x, y)
+		setSelected(hit)
+		onSelect?.(hit)
+	}
+
+	function handlePointerMove(e: React.PointerEvent<HTMLCanvasElement>) {
+		if (!isDrawing || !startPoint) return
+		const rect = (e.target as HTMLCanvasElement).getBoundingClientRect()
+		const x = e.clientX - rect.left
+		const y = e.clientY - rect.top
+		if (tool === 'rect') {
+			const dx = x - startPoint.x
+			const dy = y - startPoint.y
+			const w = Math.abs(dx)
+			const h = Math.abs(dy)
+			const cx = startPoint.x + dx / 2
+			const cy = startPoint.y + dy / 2
+			setPreview({ type: 'rect', x: cx, y: cy, width: w, height: h, rotation: 0, fill: '#61dafb', stroke: '#000' })
+		} else if (tool === 'circle') {
+			const dx = x - startPoint.x
+			const dy = y - startPoint.y
+			const r = Math.sqrt(dx * dx + dy * dy)
+			setPreview({ type: 'circle', x: startPoint.x, y: startPoint.y, radius: r, rotation: 0, fill: '#f58', stroke: '#000' })
+		}
+	}
+
+	function handlePointerUp() {
+		if (!isDrawing || !preview) return
+		setIsDrawing(false)
+		setStartPoint(null)
+		// commit
+		onCommitShape?.(preview)
+		setPreview(null)
+	}
+
+	return (
+		<canvas
+			ref={canvasRef}
+			width={width}
+			height={height}
+			style={{ border: '1px solid #ddd', touchAction: 'none' }}
+			onPointerDown={handlePointerDown}
+			onPointerMove={handlePointerMove}
+			onPointerUp={handlePointerUp}
+		/>
+	)
+}
