@@ -32,6 +32,8 @@ type Props = {
 	tool?: 'select' | 'rect' | 'circle'
 	// called when a drawn shape should be committed (pointerup)
 	onCommitShape?: (shape: DraftShape) => void
+	// called to update an existing shape (e.g., resize)
+	onUpdate?: (id: string, patch: Partial<Shape>) => void
 	width?: number
 	height?: number
 }
@@ -61,12 +63,21 @@ function drawCircle(ctx: CanvasRenderingContext2D, s: RenderCircle) {
 	ctx.restore()
 }
 
-export default function CanvasEditor({ shapes, onSelect, tool = 'select', onCommitShape, width = 800, height = 600 }: Props) {
+export default function CanvasEditor({ shapes, onSelect, tool = 'select', onCommitShape, onUpdate, width = 800, height = 600 }: Props) {
 	const canvasRef = useRef<HTMLCanvasElement | null>(null)
 	const [selected, setSelected] = useState<string | null>(null)
 	const [isDrawing, setIsDrawing] = useState(false)
 	const [startPoint, setStartPoint] = useState<{ x: number; y: number } | null>(null)
 	const [preview, setPreview] = useState<DraftShape | null>(null)
+	const [resizing, setResizing] = useState<
+		| null
+		| {
+			shapeId: string
+			handleIndex: number // 0..7 as defined in getRectHandles
+			rotationRad: number
+			oppositeWorld: { x: number; y: number }
+		}
+	>(null)
 
 	function angleToCursor(angleRad: number): CanvasCursor {
 		// Normalize to [0, 2π)
@@ -106,6 +117,22 @@ export default function CanvasEditor({ shapes, onSelect, tool = 'select', onComm
 			const angle = Math.atan2(worldY - sel.y, worldX - sel.x)
 			return { x: worldX, y: worldY, cursor: angleToCursor(angle) as CanvasCursor }
 		})
+	}
+
+	function getRectOppositeLocal(sel: Extract<Shape, { type: 'rect' }>, handleIndex: number) {
+		const halfW = sel.width / 2
+		const halfH = sel.height / 2
+		switch (handleIndex) {
+			case 0: return { x: halfW, y: halfH } // TL opposite BR
+			case 1: return { x: 0, y: halfH } // T opposite B
+			case 2: return { x: -halfW, y: halfH } // TR opposite BL
+			case 3: return { x: -halfW, y: 0 } // R opposite L
+			case 4: return { x: -halfW, y: -halfH } // BR opposite TL
+			case 5: return { x: 0, y: -halfH } // B opposite T
+			case 6: return { x: halfW, y: -halfH } // BL opposite TR
+			case 7: return { x: halfW, y: 0 } // L opposite R
+			default: return { x: 0, y: 0 }
+		}
 	}
 
 	function getCircleHandles(sel: Extract<Shape, { type: 'circle' }>) {
@@ -237,6 +264,29 @@ export default function CanvasEditor({ shapes, onSelect, tool = 'select', onComm
 			return
 		}
 
+		// If we have a selected rect, check if a handle is pressed to start resizing
+		if (selected) {
+			const sel = shapes.find((s) => s.id === selected)
+			if (sel && sel.type === 'rect') {
+				const handles = getRectHandles(sel)
+				const hitRadius = 8
+				for (let i = 0; i < handles.length; i++) {
+					const h = handles[i]
+					const dx = x - h.x
+					const dy = y - h.y
+					if (dx * dx + dy * dy <= hitRadius * hitRadius) {
+						const rotationRad = (sel.rotation * Math.PI) / 180
+						const oppLocal = getRectOppositeLocal(sel, i)
+						const cos = Math.cos(rotationRad)
+						const sin = Math.sin(rotationRad)
+						const oppWorld = { x: sel.x + oppLocal.x * cos - oppLocal.y * sin, y: sel.y + oppLocal.x * sin + oppLocal.y * cos }
+						setResizing({ shapeId: sel.id, handleIndex: i, rotationRad, oppositeWorld: oppWorld })
+						return
+					}
+				}
+			}
+		}
+
 		const hit = hitTest(x, y)
 		setSelected(hit)
 		onSelect?.(hit)
@@ -248,6 +298,62 @@ export default function CanvasEditor({ shapes, onSelect, tool = 'select', onComm
 		const rect = canvas.getBoundingClientRect()
 		const x = e.clientX - rect.left
 		const y = e.clientY - rect.top
+
+		// Resizing logic when dragging a handle on a rectangle
+		if (resizing) {
+			const sel = shapes.find((s) => s.id === resizing.shapeId)
+			if (sel && sel.type === 'rect') {
+				// transform pointer and opposite world point to local space of the rect
+				const cos = Math.cos(resizing.rotationRad)
+				const sin = Math.sin(resizing.rotationRad)
+				const px = x - sel.x
+				const py = y - sel.y
+				const localX = px * cos + py * sin
+				const localY = -px * sin + py * cos
+				const oppPx = resizing.oppositeWorld.x - sel.x
+				const oppPy = resizing.oppositeWorld.y - sel.y
+				const oppLocalX = oppPx * cos + oppPy * sin
+				const oppLocalY = -oppPx * sin + oppPy * cos
+
+				// compute new local center as midpoint between dragged local point and fixed opposite local point
+				let centerLocalX = (localX + oppLocalX) / 2
+				let centerLocalY = (localY + oppLocalY) / 2
+				let newHalfW = sel.width / 2
+				let newHalfH = sel.height / 2
+
+				switch (resizing.handleIndex) {
+					case 0: // TL
+					case 2: // TR
+					case 4: // BR
+					case 6: { // BL
+						newHalfW = Math.max(Math.abs(localX - oppLocalX) / 2, 1)
+						newHalfH = Math.max(Math.abs(localY - oppLocalY) / 2, 1)
+						break
+					}
+					case 1: // top
+					case 5: { // bottom
+						centerLocalX = 0
+						newHalfH = Math.max(Math.abs(localY - oppLocalY) / 2, 1)
+						newHalfW = sel.width / 2
+						break
+					}
+					case 3: // right
+					case 7: { // left
+						centerLocalY = 0
+						newHalfW = Math.max(Math.abs(localX - oppLocalX) / 2, 1)
+						newHalfH = sel.height / 2
+						break
+					}
+				}
+
+				// transform center back to world space
+				const worldCX = sel.x + centerLocalX * cos - centerLocalY * sin
+				const worldCY = sel.y + centerLocalX * sin + centerLocalY * cos
+
+				onUpdate?.(sel.id, { x: worldCX, y: worldCY, width: newHalfW * 2, height: newHalfH * 2 })
+			}
+			return
+		}
 
 		// When drawing, update preview
 		if (isDrawing && startPoint) {
@@ -289,12 +395,19 @@ export default function CanvasEditor({ shapes, onSelect, tool = 'select', onComm
 	}
 
 	function handlePointerUp() {
-		if (!isDrawing || !preview) return
-		setIsDrawing(false)
-		setStartPoint(null)
-		// commit
-		onCommitShape?.(preview)
-		setPreview(null)
+		const canvas = canvasRef.current
+		if (canvas) canvas.style.cursor = 'default'
+		if (resizing) {
+			setResizing(null)
+			return
+		}
+		if (isDrawing && preview) {
+			setIsDrawing(false)
+			setStartPoint(null)
+			// commit
+			onCommitShape?.(preview)
+			setPreview(null)
+		}
 	}
 
 	return (
