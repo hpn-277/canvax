@@ -1,5 +1,28 @@
 import React, { useEffect, useRef, useState } from 'react'
-import type { Shape } from '../types/shapes'
+import type { Shape, RectShape, CircleShape } from '../types/shapes'
+
+type PreviewRect = {
+	type: 'rect'
+	x: number
+	y: number
+	width: number
+	height: number
+	rotation: number
+	fill?: string
+	stroke?: string
+}
+
+type PreviewCircle = {
+	type: 'circle'
+	x: number
+	y: number
+	radius: number
+	rotation: number
+	fill?: string
+	stroke?: string
+}
+
+type DraftShape = PreviewRect | PreviewCircle
 
 type Props = {
 	shapes: Shape[]
@@ -8,12 +31,15 @@ type Props = {
 	// drawing tool
 	tool?: 'select' | 'rect' | 'circle'
 	// called when a drawn shape should be committed (pointerup)
-	onCommitShape?: (shape: any) => void
+	onCommitShape?: (shape: DraftShape) => void
 	width?: number
 	height?: number
 }
 
-function drawRect(ctx: CanvasRenderingContext2D, s: Shape & { type: 'rect' }) {
+type RenderRect = Pick<RectShape, 'type' | 'x' | 'y' | 'width' | 'height' | 'rotation' | 'fill' | 'stroke'>
+type RenderCircle = Pick<CircleShape, 'type' | 'x' | 'y' | 'radius' | 'rotation' | 'fill' | 'stroke'>
+
+function drawRect(ctx: CanvasRenderingContext2D, s: RenderRect) {
 	ctx.save()
 	ctx.translate(s.x, s.y)
 	ctx.rotate((s.rotation * Math.PI) / 180)
@@ -24,7 +50,7 @@ function drawRect(ctx: CanvasRenderingContext2D, s: Shape & { type: 'rect' }) {
 	ctx.restore()
 }
 
-function drawCircle(ctx: CanvasRenderingContext2D, s: Shape & { type: 'circle' }) {
+function drawCircle(ctx: CanvasRenderingContext2D, s: RenderCircle) {
 	ctx.save()
 	ctx.translate(s.x, s.y)
 	ctx.rotate((s.rotation * Math.PI) / 180)
@@ -40,7 +66,7 @@ export default function CanvasEditor({ shapes, onSelect, tool = 'select', onComm
 	const [selected, setSelected] = useState<string | null>(null)
 	const [isDrawing, setIsDrawing] = useState(false)
 	const [startPoint, setStartPoint] = useState<{ x: number; y: number } | null>(null)
-	const [preview, setPreview] = useState<any | null>(null)
+	const [preview, setPreview] = useState<DraftShape | null>(null)
 
 	// single render effect: draws shapes, preview, and selection in the right order
 	useEffect(() => {
@@ -78,11 +104,44 @@ export default function CanvasEditor({ shapes, onSelect, tool = 'select', onComm
 					const h = sel.height
 					ctx.translate(sel.x, sel.y)
 					ctx.rotate((sel.rotation * Math.PI) / 180)
-					ctx.strokeRect(-w / 2 - 6, -h / 2 - 6, w + 12, h + 12)
+
+					// 8 resize handles: corners and midpoints (in local, rotated space)
+					const halfW = w / 2
+					const halfH = h / 2
+					const handlePoints = [
+						{ x: -halfW, y: -halfH }, // top-left
+						{ x: 0, y: -halfH }, // top-center
+						{ x: halfW, y: -halfH }, // top-right
+						{ x: halfW, y: 0 }, // mid-right
+						{ x: halfW, y: halfH }, // bottom-right
+						{ x: 0, y: halfH }, // bottom-center
+						{ x: -halfW, y: halfH }, // bottom-left
+						{ x: -halfW, y: 0 }, // mid-left
+					]
+					handlePoints.forEach((p) => {
+						ctx.beginPath()
+						ctx.fillStyle = '#fff'
+						ctx.strokeStyle = '#000'
+						ctx.arc(p.x, p.y, 5, 0, Math.PI * 2)
+						ctx.fill()
+						ctx.stroke()
+					})
 				} else {
-					ctx.beginPath()
-					ctx.arc(sel.x, sel.y, sel.radius + 6, 0, Math.PI * 2)
-					ctx.stroke()
+					// 8 handles around the circle, evenly spaced (every 45 degrees), respecting rotation
+					ctx.translate(sel.x, sel.y)
+					ctx.rotate((sel.rotation * Math.PI) / 180)
+					const r = sel.radius
+					for (let i = 0; i < 8; i++) {
+						const angle = (i * Math.PI) / 4 // 0,45,90,...,315 degrees
+						const px = Math.cos(angle) * r
+						const py = Math.sin(angle) * r
+						ctx.beginPath()
+						ctx.fillStyle = '#fff'
+						ctx.strokeStyle = '#000'
+						ctx.arc(px, py, 5, 0, Math.PI * 2)
+						ctx.fill()
+						ctx.stroke()
+					}
 				}
 				ctx.restore()
 			}
