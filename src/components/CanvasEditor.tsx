@@ -267,21 +267,35 @@ export default function CanvasEditor({ shapes, onSelect, tool = 'select', onComm
 		// If we have a selected rect, check if a handle is pressed to start resizing
 		if (selected) {
 			const sel = shapes.find((s) => s.id === selected)
-			if (sel && sel.type === 'rect') {
-				const handles = getRectHandles(sel)
+			if (sel) {
 				const hitRadius = 8
-				for (let i = 0; i < handles.length; i++) {
-					const h = handles[i]
-					const dx = x - h.x
-					const dy = y - h.y
-					if (dx * dx + dy * dy <= hitRadius * hitRadius) {
-						const rotationRad = (sel.rotation * Math.PI) / 180
-						const oppLocal = getRectOppositeLocal(sel, i)
-						const cos = Math.cos(rotationRad)
-						const sin = Math.sin(rotationRad)
-						const oppWorld = { x: sel.x + oppLocal.x * cos - oppLocal.y * sin, y: sel.y + oppLocal.x * sin + oppLocal.y * cos }
-						setResizing({ shapeId: sel.id, handleIndex: i, rotationRad, oppositeWorld: oppWorld })
-						return
+				if (sel.type === 'rect') {
+					const handles = getRectHandles(sel)
+					for (let i = 0; i < handles.length; i++) {
+						const h = handles[i]
+						const dx = x - h.x
+						const dy = y - h.y
+						if (dx * dx + dy * dy <= hitRadius * hitRadius) {
+							const rotationRad = (sel.rotation * Math.PI) / 180
+							const oppLocal = getRectOppositeLocal(sel, i)
+							const cos = Math.cos(rotationRad)
+							const sin = Math.sin(rotationRad)
+							const oppWorld = { x: sel.x + oppLocal.x * cos - oppLocal.y * sin, y: sel.y + oppLocal.x * sin + oppLocal.y * cos }
+							setResizing({ shapeId: sel.id, handleIndex: i, rotationRad, oppositeWorld: oppWorld })
+							return
+						}
+					}
+				} else if (sel.type === 'circle') {
+					const handles = getCircleHandles(sel)
+					for (let i = 0; i < handles.length; i++) {
+						const h = handles[i]
+						const dx = x - h.x
+						const dy = y - h.y
+						if (dx * dx + dy * dy <= hitRadius * hitRadius) {
+							const rotationRad = (sel.rotation * Math.PI) / 180
+							setResizing({ shapeId: sel.id, handleIndex: i, rotationRad, oppositeWorld: { x: sel.x, y: sel.y } })
+							return
+						}
 					}
 				}
 			}
@@ -351,6 +365,12 @@ export default function CanvasEditor({ shapes, onSelect, tool = 'select', onComm
 				const worldCY = sel.y + centerLocalX * sin + centerLocalY * cos
 
 				onUpdate?.(sel.id, { x: worldCX, y: worldCY, width: newHalfW * 2, height: newHalfH * 2 })
+			} else if (sel && sel.type === 'circle') {
+				// Keep center fixed; compute new radius from center to pointer
+				const dx = x - sel.x
+				const dy = y - sel.y
+				const newRadius = Math.max(1, Math.sqrt(dx * dx + dy * dy))
+				onUpdate?.(sel.id, { radius: newRadius })
 			}
 			return
 		}
