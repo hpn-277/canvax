@@ -78,6 +78,14 @@ export default function CanvasEditor({ shapes, onSelect, tool = 'select', onComm
 			oppositeWorld: { x: number; y: number }
 		}
 	>(null)
+	const [dragging, setDragging] = useState<
+		| null
+		| {
+			shapeId: string
+			startPointer: { x: number; y: number }
+			startShapePos: { x: number; y: number }
+		}
+	>(null)
 
 	function angleToCursor(angleRad: number): CanvasCursor {
 		// Normalize to [0, 2π)
@@ -264,7 +272,7 @@ export default function CanvasEditor({ shapes, onSelect, tool = 'select', onComm
 			return
 		}
 
-		// If we have a selected rect, check if a handle is pressed to start resizing
+		// If we have a selected shape, check if a handle is pressed to start resizing
 		if (selected) {
 			const sel = shapes.find((s) => s.id === selected)
 			if (sel) {
@@ -298,6 +306,17 @@ export default function CanvasEditor({ shapes, onSelect, tool = 'select', onComm
 						}
 					}
 				}
+
+				// If we clicked on the selected shape (not on a handle), start dragging
+				const hitId = hitTest(x, y)
+				if (hitId === selected) {
+					setDragging({
+						shapeId: selected,
+						startPointer: { x, y },
+						startShapePos: { x: sel.x, y: sel.y },
+					})
+					return
+				}
 			}
 		}
 
@@ -312,6 +331,16 @@ export default function CanvasEditor({ shapes, onSelect, tool = 'select', onComm
 		const rect = canvas.getBoundingClientRect()
 		const x = e.clientX - rect.left
 		const y = e.clientY - rect.top
+
+		// Dragging logic when moving a selected shape
+		if (dragging) {
+			const dx = x - dragging.startPointer.x
+			const dy = y - dragging.startPointer.y
+			const newX = dragging.startShapePos.x + dx
+			const newY = dragging.startShapePos.y + dy
+			onUpdate?.(dragging.shapeId, { x: newX, y: newY })
+			return
+		}
 
 		// Resizing logic when dragging a handle on a rectangle
 		if (resizing) {
@@ -394,20 +423,26 @@ export default function CanvasEditor({ shapes, onSelect, tool = 'select', onComm
 			return
 		}
 
-		// Not drawing: update cursor when hovering handles of selected shape
+		// Not drawing: update cursor when hovering handles or body of selected shape
 		let cursor: CanvasCursor = 'default'
 		if (selected) {
 			const sel = shapes.find((s) => s.id === selected)
 			if (sel) {
 				const handles = sel.type === 'rect' ? getRectHandles(sel) : getCircleHandles(sel)
 				const hitRadius = 8
+				let overHandle = false
 				for (const h of handles) {
 					const dx = x - h.x
 					const dy = y - h.y
 					if (dx * dx + dy * dy <= hitRadius * hitRadius) {
 						cursor = h.cursor
+						overHandle = true
 						break
 					}
+				}
+				// If not over a handle but over the shape body, show move cursor
+				if (!overHandle && hitTest(x, y) === selected) {
+					cursor = 'move'
 				}
 			}
 		}
@@ -417,6 +452,10 @@ export default function CanvasEditor({ shapes, onSelect, tool = 'select', onComm
 	function handlePointerUp() {
 		const canvas = canvasRef.current
 		if (canvas) canvas.style.cursor = 'default'
+		if (dragging) {
+			setDragging(null)
+			return
+		}
 		if (resizing) {
 			setResizing(null)
 			return
